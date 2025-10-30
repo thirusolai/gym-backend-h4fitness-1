@@ -1,8 +1,9 @@
-const express = require("express");
+import express from "express";
+import multer from "multer";
+import path from "path";
+import GymBill from "../models/GymBill.js";
+
 const router = express.Router();
-const multer = require("multer");
-const path = require("path");
-const GymBill = require("../models/GymBill");
 
 // ----------------------
 // 🗂️ Multer Configuration
@@ -47,7 +48,7 @@ router.post("/", upload.single("profilePicture"), async (req, res) => {
     // ✅ Ensure valid status
     let status = req.body.status?.trim();
     if (!status || !["Active", "Inactive"].includes(status)) {
-      status = "Active"; // fallback
+      status = "Active";
     }
 
     const newBill = new GymBill({
@@ -87,18 +88,15 @@ router.get("/", async (req, res) => {
 // ----------------------------
 router.get("/last-member-id", async (req, res) => {
   try {
-    // Find all GymBills with memberId starting with H40
     const allBills = await GymBill.find({
       memberId: { $regex: "^H40" },
     }).lean();
 
-    // Extract the numeric part after "H40"
     const lastNumber =
       allBills.length > 0
-        ? Math.max(...allBills.map(b => parseInt(b.memberId.replace("H40", ""), 10)))
+        ? Math.max(...allBills.map((b) => parseInt(b.memberId.replace("H40", ""), 10)))
         : 0;
 
-    // Generate the NEXT member ID
     const nextNumber = lastNumber + 1;
     const nextMemberId = `H40${String(nextNumber).padStart(3, "0")}`;
 
@@ -109,7 +107,6 @@ router.get("/last-member-id", async (req, res) => {
   }
 });
 
-
 // ------------------
 // 🔁 Renew Membership
 // ------------------
@@ -117,7 +114,6 @@ router.put("/renew/:id", async (req, res) => {
   try {
     const { joiningDate, endDate, package: pkg, amountPaid } = req.body;
 
-    // ✅ Keep enum valid
     const updatedClient = await GymBill.findByIdAndUpdate(
       req.params.id,
       {
@@ -125,7 +121,7 @@ router.put("/renew/:id", async (req, res) => {
         endDate,
         package: pkg,
         amountPaid,
-        status: "Active", // ✅ use valid enum value
+        status: "Active",
       },
       { new: true }
     );
@@ -147,7 +143,6 @@ router.put("/:id", upload.single("profilePicture"), async (req, res) => {
       ...(req.file && { profilePicture: req.file.path }),
     };
 
-    // ✅ sanitize status if empty or invalid
     if (!updatedData.status || !["Active", "Inactive"].includes(updatedData.status)) {
       updatedData.status = "Active";
     }
@@ -176,4 +171,5 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-module.exports = router;
+// ✅ Export router as default
+export default router;
