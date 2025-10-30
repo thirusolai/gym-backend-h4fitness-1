@@ -1,6 +1,6 @@
 import express from "express";
 import Followup from "../models/Followup.js";
-import GymBill from "../models/GymBill.js"; // ✅ changed
+import GymBill from "../models/GymBill"; // ✅ changed
 
 const router = express.Router();
 
