@@ -46,7 +46,17 @@ const gymBillSchema = new mongoose.Schema(
     paymentMethodDetail: String,
     appointTrainer: String,
     clientRep: String,
-  },
+  
+
+  paymentHistory: [
+  {
+    amount: Number,
+    mode: String,
+    note: String,
+    date: { type: Date, default: Date.now }
+  }
+],
+},
   { timestamps: true } // Adds createdAt and updatedAt
 );
 

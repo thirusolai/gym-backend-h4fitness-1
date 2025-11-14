@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import fs from "fs";
 import GymBill from "../models/GymBill.js";
+import Followup from "../models/Followup.js";  // ← important
 
 const router = express.Router();
 
@@ -207,5 +208,50 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// --------------------------
+// 💰 Update Payment + Followup
+// --------------------------
+router.put("/payment/:id", async (req, res) => {
+  try {
+    const { amountPaid, balance, paymentHistory, followUpDate } = req.body;
+
+    // 1️⃣ Update payment + push history
+    const updatedBill = await GymBill.findByIdAndUpdate(
+      req.params.id,
+      {
+        amountPaid,
+        balance,
+        $push: { paymentHistory }, // push record
+      },
+      { new: true }
+    );
+
+    if (!updatedBill) {
+      return res.status(404).json({ message: "Client not found" });
+    }
+
+    // 2️⃣ Create follow-up entry (optional)
+    if (followUpDate) {
+      await Followup.create({
+        client: req.params.id,
+        followupType: "Payment",
+        scheduleDate: followUpDate,
+        response: paymentHistory.note || "Payment Follow-up",
+        status: "Pending",
+      });
+    }
+
+    res.status(200).json({
+      message: "Payment updated successfully",
+      data: updatedBill,
+    });
+
+  } catch (error) {
+    console.error("❌ Payment update error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 export default router;
