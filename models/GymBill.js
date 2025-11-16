@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const gymBillSchema = new mongoose.Schema(
   {
-    memberId: { type: String }, // manually entered or left blank
+    memberId: String,
     client: String,
     contactNumber: String,
     alternateContact: String,
@@ -27,14 +27,20 @@ const gymBillSchema = new mongoose.Schema(
     endDate: String,
     sessions: Number,
     price: Number,
-    discount: Number, // percentage
-    discountAmount: Number,
+
+    // 👇 You want to store this from frontend
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+
     admissionCharges: Number,
-    tax: Number, // percentage
+    tax: Number,
     amountPayable: Number,
     amountPaid: Number,
     balance: Number,
-    amount: Number, // optional
+    amount: Number,
+
     followupDate: String,
 
     status: {
@@ -46,52 +52,35 @@ const gymBillSchema = new mongoose.Schema(
     paymentMethodDetail: String,
     appointTrainer: String,
     clientRep: String,
-  
 
-  paymentHistory: [
-  {
-    amount: Number,
-    mode: String,
-    note: String,
-    date: { type: Date, default: Date.now }
-  }
-],
-renewalHistory: [
-  {
-    joiningDate: String,
-    endDate: String,
-    package: String,
-    price: Number,
-    discountAmount: Number,
-    amountPaid: Number,
-    balance: Number,
-    remarks: String,
-    trainer: String,
-    date: { type: Date, default: Date.now }
-  }
-],
+    paymentHistory: [
+      {
+        amount: Number,
+        mode: String,
+        note: String,
+        date: { type: Date, default: Date.now },
+      },
+    ],
 
-},
+    renewalHistory: [
+      {
+        joiningDate: String,
+        endDate: String,
+        package: String,
+        price: Number,
+        discountAmount: Number,
+        
+        amountPaid: Number,
+        balance: Number,
+        remarks: String,
+        trainer: String,
+        date: { type: Date, default: Date.now },
+      },
+    ],
+  },
 
-  { timestamps: true } // Adds createdAt and updatedAt
+  { timestamps: true }
 );
 
-// Auto-calculation before saving
-gymBillSchema.pre("save", function (next) {
-  const discountAmt =
-    this.price && this.discount ? (this.price * this.discount) / 100 : 0;
-
-  const taxableAmount = this.price - discountAmt + (this.admissionCharges || 0);
-
-  const taxAmt = this.tax ? (taxableAmount * this.tax) / 100 : 0;
-
-  this.discountAmount = discountAmt;
-  this.amountPayable = taxableAmount + taxAmt;
-  this.balance = this.amountPayable - (this.amountPaid || 0);
-
-  next();
-});
-
-const GymBill = mongoose.model("GymBill", gymBillSchema);
-
-export default GymBill;
+// ❌ Removed pre save (it overwrote discountAmount, balance...)
+export default mongoose.model("GymBill", gymBillSchema);

@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import fs from "fs";
 import GymBill from "../models/GymBill.js";
-import Followup from "../models/Followup.js";  // ← important
+import Followup from "../models/Followup.js";
 
 const router = express.Router();
 
@@ -43,26 +43,54 @@ router.post("/", upload.single("profilePicture"), async (req, res) => {
     if (!req.body || Object.keys(req.body).length === 0)
       return res.status(400).json({ message: "No data provided" });
 
-    // ✅ Require manual memberId input
+    // Require memberId
     if (!req.body.memberId || req.body.memberId.trim() === "") {
       return res.status(400).json({ message: "Member ID is required" });
     }
 
     const memberId = req.body.memberId.trim();
 
-    // ✅ Check for duplicate memberId
+    // Check duplicate memberId
     const existingBill = await GymBill.findOne({ memberId });
     if (existingBill) {
       return res.status(400).json({ message: `Member ID "${memberId}" already exists.` });
     }
 
-    // ✅ Ensure valid status
+    // Ensure valid status
     let status = req.body.status?.trim();
     if (!status || !["Active", "Inactive"].includes(status)) {
       status = "Active";
     }
 
-    // ✅ Handle profile picture
+    // -------------------------------
+    // 📌 Calculate first bill values
+    // -------------------------------
+    const priceNum = Number(req.body.price) || 0;
+
+    // ⭐ Read admissionCharges (frontend)
+    const admissionCharges = Number(req.body.admissionCharges) || 0;
+
+    const discountAmt = Number(req.body.discountAmount) || 0;
+    const paidAmt = Number(req.body.amountPaid) || 0;
+
+    // ⭐ Correct Balance Formula
+    const firstBalance = priceNum + admissionCharges - discountAmt - paidAmt;
+
+    // First renewal entry
+    const firstRenewalEntry = {
+      joiningDate: req.body.joiningDate,
+      endDate: req.body.endDate,
+      package: req.body.package,
+      price: priceNum,
+      admissionCharges: admissionCharges,
+      discountAmount: discountAmt,
+      amountPaid: paidAmt,
+      balance: firstBalance,
+      remarks: req.body.remarks,
+      trainer: req.body.trainer,
+    };
+
+    // Handle Profile Picture
     let profilePicture = undefined;
     if (req.file) {
       const imageData = fs.readFileSync(req.file.path);
@@ -73,12 +101,16 @@ router.post("/", upload.single("profilePicture"), async (req, res) => {
       fs.unlinkSync(req.file.path);
     }
 
+    // Create new bill
     const newBill = new GymBill({
       ...req.body,
       memberId,
       status,
       profilePicture,
-      discountAmount: Number(req.body.discountAmount) || 0,
+      admissionCharges: admissionCharges, // ⭐ store it
+      balance: firstBalance,
+      discountAmount: discountAmt,
+      renewalHistory: [firstRenewalEntry],
     });
 
     await newBill.save();
@@ -101,7 +133,6 @@ router.get("/", async (req, res) => {
   try {
     let bills = await GymBill.find().sort({ _id: -1 });
 
-    // 🔥 Add total renewal calculation for each bill
     bills = bills.map((bill) => {
       const renewalTotal = (bill.renewalHistory || []).reduce(
         (sum, r) => sum + (r.amountPaid || 0),
@@ -111,7 +142,6 @@ router.get("/", async (req, res) => {
       const totalPaidIncludingRenewals =
         (bill.amountPaid || 0) + renewalTotal;
 
-      // Attach new field
       return {
         ...bill._doc,
         totalPaidIncludingRenewals,
@@ -120,14 +150,12 @@ router.get("/", async (req, res) => {
 
     res.status(200).json(bills);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching bills", error: error.message });
+    res.status(500).json({ message: "Error fetching bills", error: error.message });
   }
 });
 
 // ------------------
-// 🔁 Renew Membership (Enhanced)
+// 🔁 Renew Membership
 // ------------------
 router.put("/renew/:id", async (req, res) => {
   try {
@@ -147,11 +175,17 @@ router.put("/renew/:id", async (req, res) => {
     if (!client) return res.status(404).json({ message: "Client not found" });
 
     const priceNum = Number(price) || 0;
+
+    // ⭐ Read admissionCharges from frontend
+    const admissionCharges = Number(req.body.admissionCharges) || 0;
+
     const discountAmt = Number(discountAmount) || 0;
     const paidAmt = Number(amountPaid) || 0;
-    const newBalance = balance ? Number(balance) : priceNum - discountAmt - paidAmt;
 
-    // 1️⃣ PUSH Renewal History
+    // ⭐ CORRECT RENEWAL BALANCE FORMULA
+    const newBalance = priceNum + admissionCharges - discountAmt - paidAmt;
+
+    // 1️⃣ Push renewal history
     await GymBill.findByIdAndUpdate(req.params.id, {
       $push: {
         renewalHistory: {
@@ -159,6 +193,7 @@ router.put("/renew/:id", async (req, res) => {
           endDate,
           package: pkg,
           price: priceNum,
+          admissionCharges: admissionCharges,
           discountAmount: discountAmt,
           amountPaid: paidAmt,
           balance: newBalance,
@@ -168,7 +203,7 @@ router.put("/renew/:id", async (req, res) => {
       },
     });
 
-    // 2️⃣ UPDATE latest renewal fields
+    // 2️⃣ Update latest user fields
     const updated = await GymBill.findByIdAndUpdate(
       req.params.id,
       {
@@ -176,6 +211,7 @@ router.put("/renew/:id", async (req, res) => {
         endDate,
         package: pkg,
         price: priceNum,
+        admissionCharges: admissionCharges,
         discountAmount: discountAmt,
         amountPaid: paidAmt,
         balance: newBalance,
@@ -196,7 +232,9 @@ router.put("/renew/:id", async (req, res) => {
   }
 });
 
-
+// ------------------
+// ✏️ Edit Renewal Entry
+// ------------------
 router.put("/renew/edit/:clientId/:renewId", async (req, res) => {
   try {
     const { clientId, renewId } = req.params;
@@ -210,8 +248,8 @@ router.put("/renew/edit/:clientId/:renewId", async (req, res) => {
           "renewalHistory.$": {
             ...updateFields,
             _id: renewId,
-          }
-        }
+          },
+        },
       }
     );
 
@@ -287,20 +325,19 @@ router.delete("/renew/delete/:clientId/:renewId", async (req, res) => {
   }
 });
 
-// --------------------------
+// ---------------------------
 // 💰 Update Payment + Followup
-// --------------------------
+// ---------------------------
 router.put("/payment/:id", async (req, res) => {
   try {
     const { amountPaid, balance, paymentHistory, followUpDate } = req.body;
 
-    // 1️⃣ Update payment + push history
     const updatedBill = await GymBill.findByIdAndUpdate(
       req.params.id,
       {
         amountPaid,
         balance,
-        $push: { paymentHistory }, // push record
+        $push: { paymentHistory },
       },
       { new: true }
     );
@@ -309,7 +346,6 @@ router.put("/payment/:id", async (req, res) => {
       return res.status(404).json({ message: "Client not found" });
     }
 
-    // 2️⃣ Create follow-up entry (optional)
     if (followUpDate) {
       await Followup.create({
         client: req.params.id,
@@ -324,12 +360,10 @@ router.put("/payment/:id", async (req, res) => {
       message: "Payment updated successfully",
       data: updatedBill,
     });
-
   } catch (error) {
     console.error("❌ Payment update error:", error);
     res.status(500).json({ error: error.message });
   }
 });
-
 
 export default router;
