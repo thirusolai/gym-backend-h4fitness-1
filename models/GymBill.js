@@ -56,7 +56,23 @@ const gymBillSchema = new mongoose.Schema(
     date: { type: Date, default: Date.now }
   }
 ],
+renewalHistory: [
+  {
+    joiningDate: String,
+    endDate: String,
+    package: String,
+    price: Number,
+    discountAmount: Number,
+    amountPaid: Number,
+    balance: Number,
+    remarks: String,
+    trainer: String,
+    date: { type: Date, default: Date.now }
+  }
+],
+
 },
+
   { timestamps: true } // Adds createdAt and updatedAt
 );
 

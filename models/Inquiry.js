@@ -16,6 +16,14 @@ const inquirySchema = new mongoose.Schema(
     convertibility: { type: String, default: "Warm" },
     source: String,
     inquiryFor: String,
+
+    /* ⭐ MULTIPLE FEEDBACK WITH DATE ⭐ */
+    feedback: [
+      {
+        message: { type: String },
+        date: { type: String }, // or Date
+      },
+    ],
   },
   { timestamps: true }
 );

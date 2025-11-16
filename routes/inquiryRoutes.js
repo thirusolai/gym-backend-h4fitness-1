@@ -35,13 +35,17 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// ✅ Update inquiry
+// ✅ Update inquiry (feedback array included)
 router.put("/:id", async (req, res) => {
   try {
-    const updated = await Inquiry.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    });
+    const updated = await Inquiry.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
     if (!updated) return res.status(404).json({ error: "Inquiry not found" });
+
     res.json({ message: "Inquiry updated successfully", inquiry: updated });
   } catch (error) {
     res.status(500).json({ error: "Failed to update inquiry" });
@@ -52,7 +56,9 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const deleted = await Inquiry.findByIdAndDelete(req.params.id);
+
     if (!deleted) return res.status(404).json({ error: "Inquiry not found" });
+
     res.json({ message: "Inquiry deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete inquiry" });
