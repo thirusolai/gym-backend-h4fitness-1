@@ -3,7 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import GymBill from "../models/GymBill.js";
 import Followup from "../models/Followup.js";
-
+import { generateInvoicePDF } from "../utils/generateInvoice.js";
 const router = express.Router();
 
 // ----------------------
@@ -34,6 +34,32 @@ router.get("/image/:id", async (req, res) => {
     res.status(500).json({ message: "Error fetching image", error: error.message });
   }
 });
+
+router.get("/invoice/pdf/:id", async (req, res) => {
+  try {
+    const bill = await GymBill.findById(req.params.id);
+    if (!bill) return res.status(404).json({ message: "Bill not found" });
+
+    const profilePic = bill.profilePicture?.data
+      ? Buffer.from(bill.profilePicture.data)
+      : null;
+
+    const pdfBuffer = await generateInvoicePDF(bill, profilePic);
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename=invoice_${bill.memberId}.pdf`,
+      "Content-Length": pdfBuffer.length,
+    });
+
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("PDF error:", error);
+    res.status(500).json({ message: "PDF generation failed", error: error.message });
+  }
+});
+
+
 
 // ---------------------
 // 🧾 Create New Gym Bill
@@ -114,7 +140,6 @@ router.post("/", upload.single("profilePicture"), async (req, res) => {
 
   balance: firstBalance,
   discountAmount: discountAmt,
-  renewalHistory: [firstRenewalEntry],
 });
 
 
@@ -174,23 +199,14 @@ router.put("/renew/:id", async (req, res) => {
       amountPaid,
       remarks,
       trainer,
+      paymentMethod, // ✅ READ FROM FRONTEND
     } = req.body;
 
     const client = await GymBill.findById(req.params.id);
     if (!client) return res.status(404).json({ message: "Client not found" });
 
-    // ⭐ Convert values
-    const priceNum = Number(price) || 0;
-    const adm = Number(admissionCharges) || 0;
-    const disc = Number(discountAmount) || 0;
-    const paid = Number(amountPaid) || 0;
-
-    const newBalance = priceNum + adm - disc - paid;
-
-    // -------------------------------------------
-    // 1️⃣ PUSH CURRENT ACTIVE RENEWAL → HISTORY
-    // -------------------------------------------
-    const oldRenewal = {
+    // 1️⃣ MOVE CURRENT CYCLE → RENEWAL HISTORY
+    const previousCycle = {
       joiningDate: client.joiningDate,
       endDate: client.endDate,
       package: client.package,
@@ -201,18 +217,24 @@ router.put("/renew/:id", async (req, res) => {
       balance: client.balance,
       remarks: client.remarks,
       trainer: client.appointTrainer,
+
+      // ⭐⭐ THIS IS THE FIX ⭐⭐
+      modeOfPayment: client.modeOfPayment || client.initialPaymentMode,
     };
 
-    await GymBill.findByIdAndUpdate(req.params.id, {
-      $push: { renewalHistory: oldRenewal },
-    });
+    // 2️⃣ CALCULATE NEW VALUES
+    const priceNum = Number(price) || 0;
+    const adm = Number(admissionCharges) || 0;
+    const disc = Number(discountAmount) || 0;
+    const paid = Number(amountPaid) || 0;
 
-    // -------------------------------------------
-    // 2️⃣ UPDATE MAIN FIELDS WITH NEW RENEWAL
-    // -------------------------------------------
+    const newBalance = priceNum + adm - disc - paid;
+
+    // 3️⃣ UPDATE MAIN DOCUMENT
     const updated = await GymBill.findByIdAndUpdate(
       req.params.id,
       {
+        $push: { renewalHistory: previousCycle }, // ✅ history saved
         joiningDate,
         endDate,
         package: pkg,
@@ -223,6 +245,10 @@ router.put("/renew/:id", async (req, res) => {
         balance: newBalance,
         remarks,
         appointTrainer: trainer,
+
+        // ⭐⭐ SAVE NEW PAYMENT MODE ⭐⭐
+        modeOfPayment: paymentMethod,
+
         status: "Active",
       },
       { new: true }
@@ -237,6 +263,8 @@ router.put("/renew/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
 
 
 // ------------------
